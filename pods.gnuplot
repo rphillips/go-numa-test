@@ -1,4 +1,4 @@
-set terminal png size 1800,1400 enhanced font "Arial,13"
+set terminal png size 1800,1500 enhanced font "Arial,13"
 set output "pods.png"
 
 # Inline datablocks for the bar charts
@@ -19,13 +19,17 @@ $UNPINNED4 << EOD
 9.5 40.67
 EOD
 
-set multiplot layout 2,1
+# Manual positioning instead of layout 2,1 to control gap between panels
+set multiplot
 
 # ============================================================
 # Top panel: Tests 2, 3, 4
 # ============================================================
+set origin 0.0, 0.52
+set size 1.0, 0.48
+
 set tmargin 5
-set bmargin 5
+set bmargin 6
 set lmargin 14
 set rmargin 6
 
@@ -88,7 +92,10 @@ unset arrow
 unset label
 unset title
 
-set tmargin 4
+set origin 0.0, 0.0
+set size 1.0, 0.50
+
+set tmargin 5
 set bmargin 6
 set lmargin 14
 set rmargin 6
