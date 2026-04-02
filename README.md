@@ -20,6 +20,7 @@
 | 3 | 2 pods, unpinned | 96 | 98.61 |
 | 4 | 4 pods, unpinned | 48 | 160.49 |
 | 5 | 200 pods, unpinned | 4 | 501.47 |
+| 6 | 1000 pods, unpinned | 4 | 722.78 |
 
 ![Combined Throughput vs Per-Pod Fairness](combined.png)
 
@@ -32,8 +33,9 @@ The combined throughput chart reveals a paradox: splitting work across more proc
 - **Test 3** (2 pods unpinned, GOMAXPROCS=96): 98 GB/s total, but with a 25% gap between the two pods. Without pinning, the OS may schedule both pods' threads unevenly across NUMA nodes, giving one pod more local memory access than the other.
 - **Test 4** (4 pods unpinned, GOMAXPROCS=48): 160 GB/s — nearly double the 2-node ceiling of ~88 GB/s. With lower GOMAXPROCS per pod, each Go runtime has fewer P's competing for cache and memory bus, reducing per-process saturation. But fairness degrades to a 1.9x spread between identical pods.
 - **Test 5** (200 pods unpinned, GOMAXPROCS=4): 501 GB/s combined — over 6x the single-process result. Each pod's 4 P's barely touch the memory bus individually, so aggregate bandwidth scales with pod count. However, fairness collapses completely: a 236x spread between the best and worst pod. Most pods get near-zero throughput while a lucky few monopolize bandwidth.
+- **Test 6** (1000 pods unpinned, GOMAXPROCS=4): 722 GB/s combined with 50 iterations per pod. At 20:1 CPU oversubscription (4,000 P's for 192 CPUs), the node is effectively saturated. Average throughput drops to 0.72 GB/s — less than 1/6th of single-core baseline. 80% of pods fall below 1 GB/s and even the best pod only reaches 14.9 GB/s. The longer run duration makes things worse: sustained contention ensures every pod gets churned across NUMA boundaries with perpetually cold caches.
 
-The 2-node bandwidth ceiling (~88 GB/s) is exceeded in Tests 3–5 because the benchmark measures *reported* throughput — each pod independently times its own memory reads. When 200 pods each run small buffers (16 MB), hot data can reside in L3 cache for lucky pods, yielding throughput numbers that exceed DRAM bandwidth. The unlucky pods, stuck with cold caches and remote NUMA memory, get almost nothing.
+The 2-node bandwidth ceiling (~88 GB/s) is exceeded in Tests 3–6 because the benchmark measures *reported* throughput — each pod independently times its own memory reads. When pods each run small buffers (16 MB), hot data can reside in L3 cache for lucky pods, yielding throughput numbers that exceed DRAM bandwidth. The unlucky pods, stuck with cold caches and remote NUMA memory, get almost nothing.
 
 ![NUMA-Pinned vs Unpinned Pod Performance](pods.png)
 
@@ -74,6 +76,34 @@ Simulating real K8s pod density with 200 concurrent processes (GOMAXPROCS=4 each
 This is the **NUMA performance lottery** at scale. ~75% of pods performed below the single-core baseline of 4.40 GB/s. The bottom panel of the chart above shows the sorted per-pod throughput — the vast majority of pods are clustered near zero while a few "lucky" pods get near-full NUMA node bandwidth.
 
 With 200 pods fighting for 192 CPUs, the problems compound: CPU oversubscription causes constant context switching (flushing L1/L2/TLB caches), each pod's Go runtime has its own scheduler creating 800 P's competing for 192 CPUs, and memory pressure forces the kernel to allocate pages on remote NUMA nodes.
+
+### Test 6: 1000 Pods Unpinned (Node Saturation)
+
+Pushing the node to its limits with 1000 concurrent processes (GOMAXPROCS=4 each, 16MB buffer, 50 iterations). This creates 4,000 P's competing for 192 CPUs — a 20:1 oversubscription ratio.
+
+- **Min**: 0.04 GB/s
+- **Max**: 14.90 GB/s
+- **Average**: 0.72 GB/s
+- **Spread**: 372x (min to max)
+- **Below 1 GB/s**: 797 pods (79.7%)
+- **Combined**: 722.78 GB/s
+
+**Throughput distribution:**
+
+| Range | Pods | Percent |
+|-------|------|---------|
+| 0.0–0.1 GB/s | 134 | 13.4% |
+| 0.1–0.5 GB/s | 506 | 50.6% |
+| 0.5–1.0 GB/s | 157 | 15.7% |
+| 1.0–2.0 GB/s | 121 | 12.1% |
+| 2.0–5.0 GB/s | 63 | 6.3% |
+| 5.0–10.0 GB/s | 16 | 1.6% |
+| 10.0–20.0 GB/s | 3 | 0.3% |
+| 20.0+ GB/s | 0 | 0.0% |
+
+At this density, the node is effectively unusable for memory-bandwidth-sensitive workloads. **64% of pods are stuck below 0.5 GB/s** — less than 1/9th of single-core baseline performance. Even the "luckiest" pod only reaches 14.9 GB/s, down from 44.96 GB/s in the 200-pod test, because sustained contention degrades everyone over time.
+
+The longer duration (50 iterations vs 5) makes the results worse, not better. With a short burst, some pods finish before the scheduler has time to migrate their goroutines across NUMA boundaries. With sustained load, every pod eventually gets churned across nodes, caches are perpetually cold, and the memory bus is fully saturated by cross-NUMA traffic. Nobody wins on an overloaded NUMA node — the floor stays the same while the ceiling collapses.
 
 ---
 
