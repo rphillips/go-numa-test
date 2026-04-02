@@ -21,6 +21,20 @@
 | 4 | 4 pods, unpinned | 48 | 160.49 |
 | 5 | 200 pods, unpinned | 4 | 501.47 |
 
+![Combined Throughput vs Per-Pod Fairness](combined.png)
+
+### Combined Throughput: More Bandwidth, Less Fairness
+
+The combined throughput chart reveals a paradox: splitting work across more processes with lower GOMAXPROCS extracts **more total memory bandwidth** from the machine — but at the cost of **wildly unequal per-pod performance**.
+
+- **Test 1** (single process, GOMAXPROCS=192): Only 78 GB/s. One Go runtime with 192 P's saturates the memory bus early and all goroutines contend for the same bandwidth. The single allocator places memory without regard to NUMA topology, so most accesses cross node boundaries.
+- **Test 2** (2 pods pinned, GOMAXPROCS=96): 88 GB/s — a 13% improvement over a single process. Each pod is pinned to one NUMA node, so both nodes' memory controllers are utilized independently with no cross-node traffic. Per-pod spread is just 0.7%.
+- **Test 3** (2 pods unpinned, GOMAXPROCS=96): 98 GB/s total, but with a 25% gap between the two pods. Without pinning, the OS may schedule both pods' threads unevenly across NUMA nodes, giving one pod more local memory access than the other.
+- **Test 4** (4 pods unpinned, GOMAXPROCS=48): 160 GB/s — nearly double the 2-node ceiling of ~88 GB/s. With lower GOMAXPROCS per pod, each Go runtime has fewer P's competing for cache and memory bus, reducing per-process saturation. But fairness degrades to a 1.9x spread between identical pods.
+- **Test 5** (200 pods unpinned, GOMAXPROCS=4): 501 GB/s combined — over 6x the single-process result. Each pod's 4 P's barely touch the memory bus individually, so aggregate bandwidth scales with pod count. However, fairness collapses completely: a 236x spread between the best and worst pod. Most pods get near-zero throughput while a lucky few monopolize bandwidth.
+
+The 2-node bandwidth ceiling (~88 GB/s) is exceeded in Tests 3–5 because the benchmark measures *reported* throughput — each pod independently times its own memory reads. When 200 pods each run small buffers (16 MB), hot data can reside in L3 cache for lucky pods, yielding throughput numbers that exceed DRAM bandwidth. The unlucky pods, stuck with cold caches and remote NUMA memory, get almost nothing.
+
 ![NUMA-Pinned vs Unpinned Pod Performance](pods.png)
 
 ### Test 2: NUMA-Pinned (Ideal Scheduling)
