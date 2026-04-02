@@ -49,6 +49,10 @@ Process 1 at 1 core started at 0.82 GB/s (vs the normal 4.2 GB/s), indicating it
 
 ## Key Findings
 
+### GOMAXPROCS Scaling
+
+![GOMAXPROCS Scaling Sweep](sweep.png)
+
 ### GC Is Not the Main Problem
 
 The scaling curves are almost identical with GC enabled and disabled. Throughput plateaus around 32 cores (~78 GB/s) and adding cores beyond that provides no benefit. The bottleneck is **memory bandwidth saturation** — each NUMA node's memory controllers can only push ~44-45 GB/s regardless of how many cores are requesting data.
