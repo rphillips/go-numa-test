@@ -22,6 +22,8 @@
 | 5 | 200 pods, unpinned | 4 | 501.47 |
 | 6 | 1000 pods, unpinned | 4 | 722.78 |
 
+![NUMA-Pinned vs Unpinned Pod Performance](pods.png)
+
 ![Combined Throughput vs Per-Pod Fairness](combined.png)
 
 ### Combined Throughput: More Bandwidth, Less Fairness
@@ -36,8 +38,6 @@ The combined throughput chart reveals a paradox: splitting work across more proc
 - **Test 6** (1000 pods unpinned, GOMAXPROCS=4): 722 GB/s combined with 50 iterations per pod. At 20:1 CPU oversubscription (4,000 P's for 192 CPUs), the node is effectively saturated. Average throughput drops to 0.72 GB/s — less than 1/6th of single-core baseline. 80% of pods fall below 1 GB/s and even the best pod only reaches 14.9 GB/s. The longer run duration makes things worse: sustained contention ensures every pod gets churned across NUMA boundaries with perpetually cold caches.
 
 The 2-node bandwidth ceiling (~88 GB/s) is exceeded in Tests 3–6 because the benchmark measures *reported* throughput — each pod independently times its own memory reads. When pods each run small buffers (16 MB), hot data can reside in L3 cache for lucky pods, yielding throughput numbers that exceed DRAM bandwidth. The unlucky pods, stuck with cold caches and remote NUMA memory, get almost nothing.
-
-![NUMA-Pinned vs Unpinned Pod Performance](pods.png)
 
 ### Test 2: NUMA-Pinned (Ideal Scheduling)
 
