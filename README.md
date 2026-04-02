@@ -2,6 +2,16 @@
 
 ## Reference: [golang/go#78044](https://github.com/golang/go/issues/78044)
 
+## Executive Summary
+
+- **Go's runtime is NUMA-unaware.** The memory allocator places pages without regard to which NUMA node a goroutine runs on, and the scheduler freely migrates goroutines across NUMA boundaries. Identical pods on the same machine get wildly different performance depending purely on luck.
+- **Memory bandwidth saturates early.** On a 192-vCPU AMD EPYC Genoa machine, aggregate throughput plateaus at just 16–24 cores (~50 GB/s). Per-core efficiency drops 94% from 1 to 192 cores — the vast majority of CPUs contribute nothing to bandwidth-bound workloads.
+- **Pod density destroys fairness.** With 200 unpinned pods, per-pod throughput varies by 236x (0.19–44.96 GB/s). At 1000 pods, 80% fall below 1 GB/s and even the best pod is degraded. The "NUMA performance lottery" means identical workloads get orders-of-magnitude different results.
+- **NUMA pinning fixes the problem.** Two pods pinned to separate NUMA nodes get symmetric, predictable performance (44.15 vs 44.47 GB/s, 0.7% spread). Without pinning, the same two pods show a 25% gap. The fix is topology-aware scheduling, not GOMAXPROCS tuning.
+- **AMD's chiplet architecture amplifies the issue.** Unlike Intel's historically monolithic designs, AMD EPYC has non-uniform latency at multiple levels (core-to-CCD, CCD-to-CCD, node-to-node). Go's random placement hits more penalty boundaries. Intel is moving to chiplets too (Xeon 6), so this problem will become universal.
+
+---
+
 ## Test Environment
 
 - **Instance**: AWS r7a.48xlarge (192 vCPUs, AMD EPYC Genoa)
