@@ -20,6 +20,8 @@
 | 3 | 2 pods, unpinned | 98.61 |
 | 4 | 4 pods, unpinned | 160.49 |
 
+![NUMA-Pinned vs Unpinned Pod Performance](pods.png)
+
 ### Test 2: NUMA-Pinned (Ideal Scheduling)
 
 Both processes received **symmetric, predictable performance**:
