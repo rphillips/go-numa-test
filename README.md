@@ -19,6 +19,7 @@
 | 2 | 2 pods, NUMA-pinned | 88.62 |
 | 3 | 2 pods, unpinned | 98.61 |
 | 4 | 4 pods, unpinned | 160.49 |
+| 5 | 200 pods, unpinned (GOMAXPROCS=4) | 501.47 |
 
 ![NUMA-Pinned vs Unpinned Pod Performance](pods.png)
 
@@ -46,6 +47,19 @@ Massive variance — a **1.9x difference** between identical pods:
 - Process 3: 40.67 GB/s
 
 Process 1 at 1 core started at 0.82 GB/s (vs the normal 4.2 GB/s), indicating it was stuck accessing remote NUMA memory.
+
+### Test 5: 200 Pods Unpinned (Dense Scheduling)
+
+Simulating real K8s pod density with 200 concurrent processes (GOMAXPROCS=4 each, 16MB buffer):
+
+- **Min**: 0.19 GB/s
+- **Max**: 44.96 GB/s
+- **Average**: 2.51 GB/s
+- **Spread**: 236x (min to max)
+
+This is the **NUMA performance lottery** at scale. ~75% of pods performed below the single-core baseline of 4.40 GB/s. The bottom panel of the chart above shows the sorted per-pod throughput — the vast majority of pods are clustered near zero while a few "lucky" pods get near-full NUMA node bandwidth.
+
+With 200 pods fighting for 192 CPUs, the problems compound: CPU oversubscription causes constant context switching (flushing L1/L2/TLB caches), each pod's Go runtime has its own scheduler creating 800 P's competing for 192 CPUs, and memory pressure forces the kernel to allocate pages on remote NUMA nodes.
 
 ---
 

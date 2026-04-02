@@ -15,7 +15,21 @@ func main() {
 	sizeMB := flag.Int("size", bench.DefaultSizeMB, "buffer size in MB")
 	iters := flag.Int("iters", bench.DefaultIters, "iterations per sequential benchmark")
 	randAccesses := flag.Int("rand-accesses", bench.DefaultRandAccess, "number of random read accesses")
+	singleTrial := flag.Bool("single", false, "run a single go-default trial and print GB/s only")
 	flag.Parse()
+
+	if *singleTrial {
+		debug.SetGCPercent(-1)
+		runtime.GC()
+		results := bench.RunGoDefault(*sizeMB, *iters, *randAccesses, runtime.GOMAXPROCS(0))
+		for _, r := range results {
+			if r.Workload == "sequential-read" {
+				fmt.Printf("%.2f\n", r.GBPerSec)
+				return
+			}
+		}
+		return
+	}
 
 	// Disable GC for the entire benchmark to isolate NUMA effects
 	// from GC worker contention

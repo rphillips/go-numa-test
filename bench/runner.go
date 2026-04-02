@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"numa-bench/numa"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -154,7 +155,7 @@ func runGoDefaultTrial(size, iters, randAccesses, gomaxprocs, trial int) []Resul
 	// Cap goroutines to limit total memory: each gets `size` bytes,
 	// so N goroutines use N * size total.
 	numGoroutines := gomaxprocs
-	maxGoroutines := 32 // 32 * 256MB = 8GB max
+	maxGoroutines := 16 // 16 * 256MB = 4GB max
 	if numGoroutines > maxGoroutines {
 		numGoroutines = maxGoroutines
 	}
@@ -227,27 +228,32 @@ func runGoDefaultTrial(size, iters, randAccesses, gomaxprocs, trial int) []Resul
 	}
 }
 
-// RunScalingSweep runs the Go-default scenario at increasing GOMAXPROCS values,
-// using powers of 2 (1, 2, 4, 8, ...) up to NumCPU. If NumCPU is not a power
-// of 2, it is included as the final step.
+// RunScalingSweep runs the Go-default scenario at every GOMAXPROCS value
+// from 1 to NumCPU. Uses reduced iterations per step to keep total runtime
+// reasonable.
 func RunScalingSweep(topo *numa.Topology, sizeMB, iters, randAccesses int) []Result {
 	totalCPUs := runtime.NumCPU()
-	var steps []int
-	for p := 1; p <= totalCPUs; p *= 2 {
-		steps = append(steps, p)
+
+	// Reduce iterations for the sweep since there are many steps
+	sweepIters := iters / 2
+	if sweepIters < 1 {
+		sweepIters = 1
 	}
-	// Add total CPU count as final step if not already included
-	if steps[len(steps)-1] != totalCPUs {
-		steps = append(steps, totalCPUs)
+	sweepRandAccesses := randAccesses / 2
+	if sweepRandAccesses < 100000 {
+		sweepRandAccesses = 100000
 	}
 
+	fmt.Printf("  Sweep: GOMAXPROCS 1..%d (iters=%d, rand-accesses=%d per step)\n",
+		totalCPUs, sweepIters, sweepRandAccesses)
+
 	var results []Result
-	for _, procs := range steps {
-		fmt.Printf("  Scaling sweep: GOMAXPROCS=%d...\n", procs)
+	for procs := 1; procs <= totalCPUs; procs++ {
+		fmt.Printf("  GOMAXPROCS=%d/%d\r", procs, totalCPUs)
 
 		old := runtime.GOMAXPROCS(procs)
 
-		trialResults := runGoDefaultTrial(sizeMB*1024*1024, iters, randAccesses, procs, 1)
+		trialResults := runGoDefaultTrial(sizeMB*1024*1024, sweepIters, sweepRandAccesses, procs, 1)
 		for i := range trialResults {
 			trialResults[i].Scenario = fmt.Sprintf("sweep-%d", procs)
 			trialResults[i].GOMAXPROCS = procs
@@ -255,7 +261,14 @@ func RunScalingSweep(topo *numa.Topology, sizeMB, iters, randAccesses int) []Res
 		results = append(results, trialResults...)
 
 		runtime.GOMAXPROCS(old)
+
+		// Force GC between steps to reclaim goroutine buffers,
+		// otherwise 192 steps * 4GB = OOM with GC disabled
+		debug.SetGCPercent(100)
+		runtime.GC()
+		debug.SetGCPercent(-1)
 	}
+	fmt.Println() // clear the \r line
 
 	return results
 }
