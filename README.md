@@ -13,13 +13,13 @@
 
 ## Benchmark Results (GC Disabled)
 
-| Test | Setup | Combined GB/s |
-|------|-------|---------------|
-| 1 | Single process, 192 CPUs | 78.43 |
-| 2 | 2 pods, NUMA-pinned | 88.62 |
-| 3 | 2 pods, unpinned | 98.61 |
-| 4 | 4 pods, unpinned | 160.49 |
-| 5 | 200 pods, unpinned (GOMAXPROCS=4) | 501.47 |
+| Test | Setup | GOMAXPROCS | Combined GB/s |
+|------|-------|------------|---------------|
+| 1 | Single process, 192 CPUs | 192 | 78.43 |
+| 2 | 2 pods, NUMA-pinned | 96 | 88.62 |
+| 3 | 2 pods, unpinned | 96 | 98.61 |
+| 4 | 4 pods, unpinned | 48 | 160.49 |
+| 5 | 200 pods, unpinned | 4 | 501.47 |
 
 ![NUMA-Pinned vs Unpinned Pod Performance](pods.png)
 
