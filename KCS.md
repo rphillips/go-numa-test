@@ -85,7 +85,7 @@ There is no fix available in the Go runtime at this time. The following workarou
 
 ### Workaround 1: Enable Kubernetes Topology Manager (Recommended)
 
-Configure the kubelet with CPU Manager `static` policy and Topology Manager to assign pods to specific NUMA nodes. This ensures pods' CPU and memory resources are aligned to the same NUMA node.
+Configure the kubelet with CPU Manager `static` policy and Topology Manager to assign pods to specific NUMA nodes. This ensures pods' CPU and memory resources are aligned to the same NUMA node. See the Red Hat documentation for [CPU Manager and Topology Manager](https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html/scalability_and_performance/using-cpu-manager) and [Workload Partitioning](https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html/scalability_and_performance/enabling-workload-partitioning).
 
 > **Note:** This workaround should be considered alongside Workaround 3 (CRI-O GOMAXPROCS injection) and Workaround 4 (setting GOMAXPROCS appropriately) for maximum effectiveness.
 
