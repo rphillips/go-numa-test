@@ -7,7 +7,7 @@
 - **Go's runtime is NUMA-unaware.** The memory allocator places pages without regard to which NUMA node a goroutine runs on, and the scheduler freely migrates goroutines across NUMA boundaries. Identical pods on the same machine get wildly different performance depending purely on luck.
 - **Memory bandwidth saturates early.** On a 192-vCPU AMD EPYC Genoa machine, aggregate throughput plateaus at just 16–24 cores (~50 GB/s). Per-core efficiency drops 94% from 1 to 192 cores — the vast majority of CPUs contribute nothing to bandwidth-bound workloads.
 - **Pod density destroys fairness.** With 200 unpinned pods, per-pod throughput varies by 236x (0.19–44.96 GB/s). At 1000 pods, 80% fall below 1 GB/s and even the best pod is degraded. The "NUMA performance lottery" means identical workloads get orders-of-magnitude different results.
-- **NUMA pinning fixes the problem.** Two pods pinned to separate NUMA nodes get symmetric, predictable performance (44.15 vs 44.47 GB/s, 0.7% spread). Without pinning, the same two pods show a 25% gap. The fix is topology-aware scheduling, not GOMAXPROCS tuning.
+- **The real fix is a NUMA-aware Go runtime.** NUMA pinning via `taskset` or Kubernetes Topology Manager proves the problem is solvable — two pinned pods get symmetric performance (44.15 vs 44.47 GB/s, 0.7% spread). But external pinning is a workaround. The proper fix is making Go's memory allocator place pages on the NUMA node where the goroutine is executing, the scheduler prefer to keep goroutines near their memory, and the GC scan memory local to each worker's node. These are runtime-level changes that would require no user code modifications.
 - **AMD's chiplet architecture amplifies the issue.** Unlike Intel's historically monolithic designs, AMD EPYC has non-uniform latency at multiple levels (core-to-CCD, CCD-to-CCD, node-to-node). Go's random placement hits more penalty boundaries. Intel is moving to chiplets too (Xeon 6), so this problem will become universal.
 
 ---
@@ -413,10 +413,23 @@ Go's NUMA-unaware scheduler hurts more on AMD because there are **more opportuni
 
 ## Possible Mitigations
 
+### The Proper Fix: NUMA-Aware Go Runtime
+
+The root cause is Go's runtime treating all memory and CPUs as uniform. A proper fix would involve changes to three runtime subsystems:
+
+1. **NUMA-local memory allocator** — When a goroutine allocates memory, place pages on the same NUMA node where the goroutine is currently executing. Today, Go's allocator grabs large spans from `mmap` and subdivides them internally, so a span allocated by a goroutine on node 0 can later be handed to a goroutine on node 1.
+2. **NUMA-aware scheduler** — Prefer to keep a goroutine on the same NUMA node as its memory. If a goroutine's heap is on node 0, avoid migrating it to node 1's CPUs unless node 0 is overloaded.
+3. **NUMA-aware GC** — GC workers currently scan the entire heap from any CPU. NUMA-aware GC would partition scanning so each worker primarily scans memory local to its NUMA node.
+
+These are runtime-level changes that would require **no user code modifications**. The allocator change alone would eliminate most of the penalty measured in these benchmarks.
+
+### External Workarounds (Available Today)
+
 Until Go's runtime is made NUMA-aware, the available workarounds are external:
 
 - **`taskset`** — Pin a process to one NUMA node's CPUs
 - **Multiple smaller processes** — Run one per NUMA node, each pinned
 - **Kubernetes Topology Manager** — Enable CPU Manager with `static` policy and Topology Manager to assign pods to specific NUMA nodes
+- **Smaller instances** — Use instances that fit within a single NUMA node to avoid the problem entirely
 
-None of these are Go-level fixes — they are external workarounds.
+None of these fix the underlying issue — they avoid it by constraining where Go runs.
