@@ -115,6 +115,33 @@ At this density, the node is effectively unusable for memory-bandwidth-sensitive
 
 The longer duration (50 iterations vs 5) makes the results worse, not better. With a short burst, some pods finish before the scheduler has time to migrate their goroutines across NUMA boundaries. With sustained load, every pod eventually gets churned across nodes, caches are perpetually cold, and the memory bus is fully saturated by cross-NUMA traffic. Nobody wins on an overloaded NUMA node — the floor stays the same while the ceiling collapses.
 
+### Pod Density Saturation Curve
+
+How many pods can the node handle before performance collapses? A sweep from 1 to 200 pods (all at GOMAXPROCS=4, 50 iterations) reveals the saturation point:
+
+![Pod Density Saturation Curve](pod-sweep.png)
+
+| Pods | Per-Pod Avg | Combined | Spread | Phase |
+|------|-------------|----------|--------|-------|
+| 1 | 44.74 GB/s | 44.74 GB/s | 1.0x | Linear scaling |
+| 2 | 44.73 GB/s | 89.46 GB/s | 1.0x | Linear scaling |
+| 4 | 39.05 GB/s | 156.21 GB/s | 1.5x | Linear scaling |
+| 8 | 37.19 GB/s | 297.50 GB/s | 1.8x | Linear scaling |
+| **16** | **22.90 GB/s** | **366.38 GB/s** | **2.9x** | **Peak — saturation** |
+| 24 | 9.97 GB/s | 239.30 GB/s | 4.1x | Collapse |
+| 32 | 5.48 GB/s | 175.33 GB/s | 4.1x | Collapse |
+| 48 | 4.48 GB/s | 215.03 GB/s | 15.6x | Collapse |
+| 64 | 3.14 GB/s | 200.80 GB/s | 15.8x | Collapse |
+| 96 | 2.01 GB/s | 192.73 GB/s | 18.7x | Collapse |
+| 128 | 1.63 GB/s | 209.04 GB/s | 89.7x | Collapse |
+| 200 | 1.26 GB/s | 252.58 GB/s | 166.2x | Collapse |
+
+**16 pods at GOMAXPROCS=4 saturates this node.** That's only 64 active P's for 192 CPUs — not even 1:1 CPU subscription — but the memory bus is already maxed out. The curve has three clear phases:
+
+1. **1–8 pods (linear scaling)**: Each additional pod adds proportional throughput. Per-pod average stays high (37–45 GB/s) and spread is minimal (1.0–1.8x). The memory bus has headroom.
+2. **16 pods (peak)**: Combined throughput hits 366 GB/s — the maximum the node will ever deliver. Per-pod average has already dropped to 23 GB/s and spread reaches 2.9x. The memory bus is saturated.
+3. **24+ pods (collapse)**: Per-pod average craters (from 23 to under 1 GB/s), combined throughput actually *decreases* due to contention overhead, and the NUMA lottery spread explodes exponentially (4x → 166x). Every pod added past this point makes everyone worse off.
+
 ---
 
 ## Key Findings
